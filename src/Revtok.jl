@@ -1,5 +1,7 @@
 module Revtok
+export tokenize, detokenize
 
-# package code goes here
+include("tokenizer.jl")
+include("subwords.jl")
 
-end # module
+end
