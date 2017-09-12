@@ -36,7 +36,7 @@ function overlaps(utterance, ngram1, ngram2)
             end
         end
     end
-    ret = ret / (length(inds1) * length(inds2))
+    ret = ret / (length(inds2))# * length(inds1))
     #display((ret, utterance.text, ngram1.text, ngram2.text))
     return ret
 end
@@ -72,28 +72,58 @@ function buildngrams(counts::Accumulator{S}) where {S}
     return values(ngrams)
 end
 
+function increment_overlaps!(ngram::NGram, utterance::Utterance, ngrams::PriorityQueue)
+    println("incrementing ", ngram.text, " in ", utterance.text)
+    seen = Set([ngram])
+    for ngram2 in utterance.ngrams
+        if !(ngram2 in seen)
+            olfrac = overlaps(utterance, ngram2, ngram)
+            ngram2.count += utterance.count * olfrac
+            if olfrac > 0 && ngram2 in keys(ngrams)
+                ngrams[ngram2] = entropy(ngram2)
+            end
+            push!(seen, ngram2)
+        end
+    end
+end
+
+function decrement_overlaps!(ngram::NGram, ngrams::PriorityQueue)
+    for utterance in keys(ngram.inds)
+        seen = Set([ngram])
+        for ngram2 in utterance.ngrams
+            if !(ngram2 in seen)
+                #display((ngram.text,ngram2.text=>ngram2.count, utterance.text=>utterance.count, overlaps(utterance, ngram2, ngram)))
+                olfrac = overlaps(utterance, ngram2, ngram)
+                ngram2.count -= utterance.count * olfrac
+                if olfrac > 0 && ngram2 in keys(ngrams)
+                    #otherwise maybe update?
+                    ngrams[ngram2] = entropy(ngram2)
+                elseif olfrac > 0
+                    increment_overlaps!(ngram2, utterance, ngrams)
+                end
+                # if ngram2.text in vocab
+                #     pop!(vocab, ngram2.text)
+                # end
+                # ngrams[ngram2] = entropy(ngram2)
+                push!(seen, ngram2)
+            end
+        end
+    end
+end
+
 function buildvocab(counts::Accumulator{S}, maxsize::Int) where {S}
-    #vocab = OrderedDict{S, Float64}(counter(string.(convert(Vector{Char}, join(keys(counts), "")))))
-    vocab = OrderedDict{S, Float64}()
+    vocab = OrderedDict{S, Float64}(counter(string.(convert(Vector{Char}, join(keys(counts), "")))))
+    #vocab = OrderedDict{S, Float64}()
     ngrams = Dict(ng => entropy(ng) for ng in buildngrams(counts))
     ngrams = PriorityQueue(ngrams, Base.Order.Reverse)
     while length(vocab) < maxsize
         #display(structure(ngrams))
         best, bestentropy = dequeue_pair!(ngrams)
-        for utterance in keys(best.inds)
-            seen = Set([best])
-            for ngram in utterance.ngrams
-                if !(ngram in seen)
-                    display((best.text,ngram.text=>ngram.count, utterance.text=>utterance.count, overlaps(utterance, ngram, best)))
-                    ngram.count -= utterance.count * overlaps(utterance, ngram, best)
-                    if ngram in keys(ngrams)
-                        #otherwise maybe update?
-                        ngrams[ngram] = entropy(ngram)
-                    end
-                    push!(seen, ngram)
-                end
-            end
+        if bestentropy <= 0
+            break
         end
+        println("decrementing \"", best.text, "\" with entropy ", bestentropy)
+        decrement_overlaps!(best, ngrams)
         vocab[best.text] = bestentropy
     end
     return vocab
