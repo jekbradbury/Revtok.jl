@@ -26,12 +26,16 @@ Utterance(text::S, count::Int) where {S} = Utterance{S}(text, count)
 
 function overlaps(utterance, ngram1, ngram2)
     inds1, inds2 = ngram1.inds[utterance], ngram2.inds[utterance]
+    nb1, nb2 = sizeof(ngram1.text), sizeof(ngram2.text)
     ret = 0
     for i1 in inds1
         for i2 in inds2
-            if (i2 <= i1 <= i1 + ngram1.n <= i2 + ngram2.n
-                || i1 <= i2 < i1 + ngram1.n
-                || i2 <= i1 < i2 + ngram2.n)
+            # if ngram1.text == " and" || ngram2.text == " and"
+            #     println("$(ngram1.text), $(ngram2.text), $i1, $i2, $(nb1), $(nb2)")
+            # end
+            if (i2 <= i1 <= i1 + nb1 <= i2 + nb2
+                || i1 <= i2 < i1 + nb1
+                || i2 <= i1 < i2 + nb2)
                 ret += 1
             end
         end
@@ -72,17 +76,26 @@ function buildngrams(counts::Accumulator{S}) where {S}
     return values(ngrams)
 end
 
-function increment_overlaps!(ngram::NGram, utterance::Utterance, ngrams::PriorityQueue)
-    println("incrementing ", ngram.text, " in ", utterance.text)
-    seen = Set([ngram])
-    for ngram2 in utterance.ngrams
-        if !(ngram2 in seen)
-            olfrac = overlaps(utterance, ngram2, ngram)
-            ngram2.count += utterance.count * olfrac
-            if olfrac > 0 && ngram2 in keys(ngrams)
-                ngrams[ngram2] = entropy(ngram2)
+function fix_double_counts!(oldng::NGram, newng::NGram, utterance::Utterance, ngrams::PriorityQueue)
+    #println("fixing dc for $((oldng.text, newng.text)) in \"$(utterance.text)\"")
+    seen = Set([oldng, newng])
+    for ngram in utterance.ngrams
+        if !(ngram in seen)
+            olfrac1 = overlaps(utterance, ngram, oldng)
+            olfrac2 = overlaps(utterance, ngram, newng)
+            olfrac = olfrac1 * olfrac2
+            if ngram.text == " and"
+                println("fixing dc for $((oldng.text, newng.text)) in \"$(utterance.text)\"")
+                print("$olfrac1, $olfrac2, $(ngram.count), $(utterance.count) -- from $(entropy(ngram)) ")
             end
-            push!(seen, ngram2)
+            ngram.count += utterance.count * olfrac
+            if ngram.text == " and"
+                println("to $(entropy(ngram))")
+            end
+            if olfrac > 0 && ngram in keys(ngrams)
+                ngrams[ngram] = entropy(ngram)
+            end
+            push!(seen, ngram)
         end
     end
 end
@@ -94,12 +107,18 @@ function decrement_overlaps!(ngram::NGram, ngrams::PriorityQueue)
             if !(ngram2 in seen)
                 #display((ngram.text,ngram2.text=>ngram2.count, utterance.text=>utterance.count, overlaps(utterance, ngram2, ngram)))
                 olfrac = overlaps(utterance, ngram2, ngram)
+                if ngram2.text == " and"
+                    print("in \"$(utterance.text)\": $olfrac, $(ngram2.count), $(utterance.count) -- from $(entropy(ngram2)) ")
+                end
                 ngram2.count -= utterance.count * olfrac
+                if ngram2.text == " and"
+                    println("to $(entropy(ngram2))")
+                end
                 if olfrac > 0 && ngram2 in keys(ngrams)
                     #otherwise maybe update?
                     ngrams[ngram2] = entropy(ngram2)
                 elseif olfrac > 0
-                    increment_overlaps!(ngram2, utterance, ngrams)
+                    fix_double_counts!(ngram, ngram2, utterance, ngrams)
                 end
                 # if ngram2.text in vocab
                 #     pop!(vocab, ngram2.text)
@@ -122,7 +141,7 @@ function buildvocab(counts::Accumulator{S}, maxsize::Int) where {S}
         if bestentropy <= 0
             break
         end
-        println("decrementing \"", best.text, "\" with entropy ", bestentropy)
+        println("decrementing \"$(best.text)\" with entropy $bestentropy")
         decrement_overlaps!(best, ngrams)
         vocab[best.text] = bestentropy
     end
