@@ -54,7 +54,8 @@ function decapitalize(tok)
     if length(tok) < 1 || tok[1] == lowercase(tok[1])
         return string(pre, tok)
     end
-    if tok == ucfirst(tok)
+    if (tok[1] == uppercase(tok[1]) &&
+        (length(tok) == 1 || tok[2] != uppercase(tok[2])))
         return string(CAP, pre, lcfirst(tok))
     end
     return string(pre, tok)

@@ -4,13 +4,13 @@ mutable struct NGram{S<:AbstractString, T}
     n::Int
     text::S
     inds::Dict{T, Set{Int}}
-    count::Float64
+    counts::Dict{T, Float64}
     function NGram{S, T}(text) where {S<:AbstractString, T}
-        new(length(text), text, Dict{T, Set{Int}}(), 0)
+        new(length(text), text, Dict{T, Set{Int}}(), Dict{T, Int}())
     end
 end
 
-entropy(ngram::NGram) = ngram.count * (ngram.n - 1)
+entropy(ngram::NGram) = sum(values(ngram.counts)) * (ngram.n - 1)
 
 struct Utterance{S<:AbstractString}
     text::S
@@ -30,14 +30,19 @@ function overlaps(utterance, ngram1, ngram2)
     ret = 0
     for i1 in inds1
         for i2 in inds2
-            # if ngram1.text == " and" || ngram2.text == " and"
+            # if ngram1.text == " other " || ngram2.text == " other "
             #     println("$(ngram1.text), $(ngram2.text), $i1, $i2, $(nb1), $(nb2)")
             # end
-            if (i2 <= i1 <= i1 + nb1 <= i2 + nb2
-                || i1 <= i2 < i1 + nb1
-                || i2 <= i1 < i2 + nb2)
+            if i2 <= i1 <= i1 + nb1 <= i2 + nb2
+                ret += 1
+            elseif i1 <= i2 <= i2 + nb2 <= i1 + nb1
+            elseif (i1 <= i2 < i1 + nb1
+                 || i2 <= i1 < i2 + nb2)
                 ret += 1
             end
+            # in " other "
+            # " other ": 1, 7
+            # "r ": 6, 2
         end
     end
     ret = ret / (length(inds2))# * length(inds1))
@@ -46,7 +51,7 @@ function overlaps(utterance, ngram1, ngram2)
 end
 
 function addinstance!(ngram::NGram, utterance::Utterance, i::Int)
-    ngram.count += utterance.count
+    ngram.counts[utterance] = utterance.count
     inds = get!(Set{Int}, ngram.inds, utterance)
     push!(inds, i)
     push!(utterance.ngrams, ngram)
@@ -84,12 +89,12 @@ function fix_double_counts!(oldng::NGram, newng::NGram, utterance::Utterance, ng
             olfrac1 = overlaps(utterance, ngram, oldng)
             olfrac2 = overlaps(utterance, ngram, newng)
             olfrac = olfrac1 * olfrac2
-            if ngram.text == " and"
+            if ngram.text == " other "
                 println("fixing dc for $((oldng.text, newng.text)) in \"$(utterance.text)\"")
-                print("$olfrac1, $olfrac2, $(ngram.count), $(utterance.count) -- from $(entropy(ngram)) ")
+                print("$olfrac1, $olfrac2, $(sum(values(ngram.counts))), $(utterance.count) -- from $(entropy(ngram)) ")
             end
-            ngram.count += utterance.count * olfrac
-            if ngram.text == " and"
+            ngram.counts[utterance] += utterance.count * olfrac
+            if ngram.text == " other "
                 println("to $(entropy(ngram))")
             end
             if olfrac > 0 && ngram in keys(ngrams)
@@ -107,18 +112,19 @@ function decrement_overlaps!(ngram::NGram, ngrams::PriorityQueue)
             if !(ngram2 in seen)
                 #display((ngram.text,ngram2.text=>ngram2.count, utterance.text=>utterance.count, overlaps(utterance, ngram2, ngram)))
                 olfrac = overlaps(utterance, ngram2, ngram)
-                if ngram2.text == " and"
-                    print("in \"$(utterance.text)\": $olfrac, $(ngram2.count), $(utterance.count) -- from $(entropy(ngram2)) ")
-                end
-                ngram2.count -= utterance.count * olfrac
-                if ngram2.text == " and"
-                    println("to $(entropy(ngram2))")
-                end
+                # if ngram2.text == " other "
+                #     print("in \"$(utterance.text)\": $olfrac, $(sum(values(ngram2.counts))), $(utterance.count) -- from $(entropy(ngram2)) ")
+                # end
+                ngram2.counts[utterance] -= utterance.count * olfrac
+                ngram2.counts[utterance] = max(ngram2.counts[utterance], 0)
+                # if ngram2.text == " other "
+                #     println("to $(entropy(ngram2))")
+                # end
                 if olfrac > 0 && ngram2 in keys(ngrams)
                     #otherwise maybe update?
                     ngrams[ngram2] = entropy(ngram2)
                 elseif olfrac > 0
-                    fix_double_counts!(ngram, ngram2, utterance, ngrams)
+                    #fix_double_counts!(ngram, ngram2, utterance, ngrams)
                 end
                 # if ngram2.text in vocab
                 #     pop!(vocab, ngram2.text)
@@ -141,7 +147,7 @@ function buildvocab(counts::Accumulator{S}, maxsize::Int) where {S}
         if bestentropy <= 0
             break
         end
-        println("decrementing \"$(best.text)\" with entropy $bestentropy")
+        #println("decrementing \"$(best.text)\" with entropy $bestentropy")
         decrement_overlaps!(best, ngrams)
         vocab[best.text] = bestentropy
     end
@@ -149,6 +155,9 @@ function buildvocab(counts::Accumulator{S}, maxsize::Int) where {S}
 end
 
 function segment(utext::S, vocab::Associative{S, Float64}) where {S}
+    if length(utext) == 1
+        return [utext]
+    end
     vocab = keys(vocab)
     i, segments = 1, OrderedDict(1 => Vector{S}())
     while true
