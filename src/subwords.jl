@@ -154,6 +154,10 @@ function buildvocab(counts::Accumulator{S}, maxsize::Int) where {S}
     return vocab
 end
 
+function buildvocab(counts::Associative, maxsize::Number)
+    buildvocab(counter(convert(Dict{String, Int}, counts)), convert(Int, maxsize))
+end
+
 function segment(utext::S, vocab::Associative{S, Float64}) where {S}
     if length(utext) == 1
         return [utext]
@@ -192,20 +196,6 @@ function segment(utext::S, vocab::Associative{S, Float64}) where {S}
     return segments[endof(utext) + 1]
 end
 
-# def __call__(self, utext):
-#     #print(utterance)
-#     i, segments = 0, {0: []}
-#     while True:
-#         for j in range(i + 1, len(utterance) + 1):
-#             if utterance[i:j] in self.vocab:
-#                 #print(i, j, segments)
-#                 curlen = len(segments[j]) if j in segments else len(utterance) + 1
-#                 if len(segments[i]) + 1 < curlen:
-#                     segments[j] = segments[i] + [utterance[i:j]]
-#         #print(i, segments)
-#         inds = sorted(segments.keys())
-#         if inds.index(i) < len(inds) - 1:
-#             i = inds[inds.index(i) + 1]
-#         else:
-#             break
-#     return segments[len(utterance)]
+function segment(utext, vocab::Associative)
+    segment(utext, OrderedDict{String, Float64}(vocab))
+end
