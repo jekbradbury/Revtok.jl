@@ -137,6 +137,7 @@ function decrement_overlaps!(ngram::NGram, ngrams::PriorityQueue)
 end
 
 function buildvocab(counts::Accumulator{S}, maxsize::Int) where {S}
+    #display(counts)
     vocab = OrderedDict{S, Float64}(counter(string.(convert(Vector{Char}, join(keys(counts), "")))))
     #vocab = OrderedDict{S, Float64}()
     ngrams = Dict(ng => entropy(ng) for ng in buildngrams(counts))
