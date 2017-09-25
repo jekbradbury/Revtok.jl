@@ -1,4 +1,5 @@
 using DataStructures
+using ProgressMeter
 
 mutable struct NGram{S<:AbstractString, T}
     n::Int
@@ -74,7 +75,7 @@ end
 
 function buildngrams(counts::Accumulator{S}) where {S}
     ngrams = Dict{S, NGram{S, Utterance{S}}}()
-    for (text, count) in counts
+    @showprogress 1 "building ngrams: " for (text, count) in counts
         utterance = Utterance(text, count)
         buildngrams!(utterance, ngrams)
     end
@@ -142,6 +143,7 @@ function buildvocab(counts::Accumulator{S}, maxsize::Int) where {S}
     #vocab = OrderedDict{S, Float64}()
     ngrams = Dict(ng => entropy(ng) for ng in buildngrams(counts))
     ngrams = PriorityQueue(ngrams, Base.Order.Reverse)
+    p = Progress(maxsize - length(vocab), 1, "building subword vocab: ")
     while length(vocab) < maxsize
         #display(structure(ngrams))
         best, bestentropy = dequeue_pair!(ngrams)
@@ -151,6 +153,7 @@ function buildvocab(counts::Accumulator{S}, maxsize::Int) where {S}
         #println("decrementing \"$(best.text)\" with entropy $bestentropy")
         decrement_overlaps!(best, ngrams)
         vocab[best.text] = bestentropy
+        next!(p)
     end
     return vocab
 end
@@ -159,7 +162,7 @@ function buildvocab(counts::Associative, maxsize::Number)
     buildvocab(counter(convert(Dict{String, Int}, counts)), convert(Int, maxsize))
 end
 
-function segment(utext::S, vocab::Associative{S, Float64}) where {S}
+function segment(utext::S, vocab::Associative{S, Float64}) where {S <: AbstractString}
     if length(utext) == 1
         return [utext]
     end
@@ -197,6 +200,11 @@ function segment(utext::S, vocab::Associative{S, Float64}) where {S}
     return segments[endof(utext) + 1]
 end
 
-function segment(utext, vocab::Associative)
+function segment(utext::AbstractString, vocab::Associative)
     segment(utext, OrderedDict{String, Float64}(vocab))
 end
+
+function segment(utexts::AbstractVector, vocab::Associative)
+    [tok for utext in utexts for tok in segment(utext, vocab)]
+end
+
