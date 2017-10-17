@@ -123,7 +123,7 @@ function decrement_overlaps!(ngram::NGram, ngrams::PriorityQueue)
                 # end
                 if olfrac > 0 && ngram2 in keys(ngrams)
                     #otherwise maybe update?
-                    ngrams[ngram2] = entropy(ngram2)
+                    ngrams[ngram2] = (entropy(ngram2), ngram2.text)
                 elseif olfrac > 0
                     #fix_double_counts!(ngram, ngram2, utterance, ngrams)
                 end
@@ -141,18 +141,18 @@ function buildvocab(counts::Accumulator{S}, maxsize::Int) where {S}
     #display(counts)
     vocab = OrderedDict{S, Float64}(counter(string.(convert(Vector{Char}, join(keys(counts), "")))))
     #vocab = OrderedDict{S, Float64}()
-    ngrams = Dict(ng => entropy(ng) for ng in buildngrams(counts))
+    ngrams = Dict(ng => (entropy(ng), ng.text) for ng in buildngrams(counts))
     ngrams = PriorityQueue(ngrams, Base.Order.Reverse)
     p = Progress(maxsize - length(vocab), 1, "building subword vocab: ")
     while length(vocab) < maxsize
         #display(structure(ngrams))
-        best, bestentropy = dequeue_pair!(ngrams)
+        best, (bestentropy, besttext) = dequeue_pair!(ngrams)
         if bestentropy <= 0
             break
         end
         #println("decrementing \"$(best.text)\" with entropy $bestentropy")
         decrement_overlaps!(best, ngrams)
-        vocab[best.text] = bestentropy
+        vocab[besttext] = bestentropy
         next!(p)
     end
     return vocab
@@ -207,4 +207,3 @@ end
 function segment(utexts::AbstractVector, vocab::Associative)
     [tok for utext in utexts for tok in segment(utext, vocab)]
 end
-
