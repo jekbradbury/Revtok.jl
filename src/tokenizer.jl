@@ -10,31 +10,29 @@ function space_priority(char)
 end
 
 "Simple reversible tokenizer"
-function tokenize(s::AbstractString, decap::Bool=false)
+function tokenize(s::AbstractString, decap::Bool=false, split_punctuation=True)
     toks = [Vector{Char}()]
-    current_cat = -2
+    current_cat = 0 # or -2?
     for c in s
         cat = space_priority(c)
         if c == ' '
             push!(toks[end], HALF)
             push!(toks, [HALF])
             current_cat = 0
+            continue
         elseif current_cat == 0
             push!(toks[end], c)
-            current_cat = cat
-        elseif cat == current_cat
+        elseif cat == current_cat && (cat > 2 || !split_punctuation)
             push!(toks[end], c) # HALF + c
+        elseif cat <= 0 && current_cat <= 0
+            push!(toks, [c])
+        elseif cat < current_cat
+            push!(toks[end], HALF)
+            push!(toks, [c])
         else
-            if cat <= 0 && current_cat <= 0
-                push!(toks, [c])
-            elseif cat < current_cat
-                push!(toks[end], HALF)
-                push!(toks, [c])
-            else
-                push!(toks, [HALF, c])
-            end
-            current_cat = cat
+            push!(toks, [HALF, c])
         end
+        current_cat = cat
     end
     if toks[1] == Vector{Char}()
         toks = toks[2:end]
